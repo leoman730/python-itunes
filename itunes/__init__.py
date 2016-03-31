@@ -4,6 +4,8 @@ import os
 import urllib2, urllib
 import urlparse
 import re
+import sys
+
 try:
     import simplejson as json
 except ImportError:
@@ -62,23 +64,44 @@ class _Request(object):
     def _download_response(self):
         """Returns a response"""
         data = []
-        for name in self.params.keys():
-            value = self.params[name]
-            if isinstance(value, int) or isinstance(value, float) or isinstance(value, long):
-                value = str(value)
-            try:
-                data.append('='.join((name, urllib.quote_plus(value.replace('&amp;', '&').encode('utf8')))))
-            except UnicodeDecodeError:
-                data.append('='.join((name, urllib.quote_plus(value.replace('&amp;', '&')))))
-        data = '&'.join(data)
 
-        url = HOST_NAME
-        parsed_url = urlparse.urlparse(url)
-        if not parsed_url.scheme:
-            url = "http://" + url
-        url += self.method + '?'
-        url += data
+        if self.method == 'rss_lookup':
+            for name in self.params.keys():
 
+                value = self.params[name]
+                if isinstance(value, int) or isinstance(value, float) or isinstance(value, long):
+                    value = str(value)
+                try:
+                    data.append('='.join((name, urllib.quote_plus(value.replace('&amp;', '&').encode('utf8')))))
+                except UnicodeDecodeError:
+                    data.append('='.join((name, urllib.quote_plus(value.replace('&amp;', '&')))))
+            
+            data = '/'.join(data)
+
+            url = "https://itunes.apple.com/us/rss/topfreeapplications/" + data + '/json'
+        else:
+            
+            for name in self.params.keys():
+
+                value = self.params[name]
+                if isinstance(value, int) or isinstance(value, float) or isinstance(value, long):
+                    value = str(value)
+                try:
+                    data.append('='.join((name, urllib.quote_plus(value.replace('&amp;', '&').encode('utf8')))))
+                except UnicodeDecodeError:
+                    data.append('='.join((name, urllib.quote_plus(value.replace('&amp;', '&')))))
+            
+            data = '&'.join(data)
+
+            url = HOST_NAME
+            parsed_url = urlparse.urlparse(url)
+
+            
+            if not parsed_url.scheme:
+                url = "http://" + url
+            url += self.method + '?'
+            url += data
+            
         request = urllib2.Request(url)
         response = urllib2.urlopen(request)
         return response.read()
@@ -144,8 +167,30 @@ class _BaseObject(object):
             params[key] = self._search_terms[key]
         return params
 
+
+    def getRssResult(self):
+        self._json_results = self._request(cacheable=is_caching_enabled())
+
+        # print len(self._json_results['feed']['entry'])
+
+        self._num_results = len(self._json_results['feed']['entry'])
+
+        l =[]
+
+        for json in self._json_results['feed']['entry']:
+            id = json['id']['attributes']['im:id']
+            item = IosApp(id);
+
+            item._set(json)
+
+            l.append(item)
+
+        return l
+
+
     def get(self):
         self._json_results = self._request(cacheable=is_caching_enabled())
+
         if self._json_results.has_key('errorMessage'):
             raise ServiceException(type='Error', message=self._json_results['errorMessage'])
         self._num_results = self._json_results['resultCount']
@@ -237,6 +282,24 @@ class Lookup(_BaseObject):
         if country:
             self._search_terms['country'] = country  # Retrieve localized version of item data
         self._search_terms['limit'] = limit  # Results limit
+
+
+class RssLookup(_BaseObject):
+    def __init__(self, genre=6013, country='us', limit=5):
+        _BaseObject.__init__(self, 'rss_lookup')
+
+        self._search_terms['genre'] = genre
+        self._search_terms['country'] = country
+        self._search_terms['limit'] = limit
+
+
+
+class RssItem(object):
+    def __init__(self, id):
+        item = lookup(id)
+        print item
+        sys.exit()
+
 
 
 # RESULT ITEM
@@ -511,6 +574,40 @@ class Audiobook(Album):
     def __init__(self, id):
         Album.__init__(self, id)
 
+
+
+# # IosApp
+class IosApp():
+    def __init__(self, id):
+        self.id = id
+        self.data = lookup(id)
+
+    def _set(self, json):
+        self.name = self.data.get_name()
+        self.price = self.data.get_price()
+        self.description = self.data.get_description()
+        self.avg_rating = self.data.get_avg_rating()
+        self.num_ratings = self.data.get_num_ratings() 
+
+
+
+    def get_price(self):
+        return self.price
+
+    def get_description(self):
+        return self.description
+
+    def get_avg_rating(self):
+        return self.avg_rating
+
+    def get_num_ratings(self):
+        return self.num_ratings
+
+    def get_name(self):
+        return self.name
+
+
+
 # Software
 class Software(Track):
     """ Audiobook class """
@@ -654,3 +751,10 @@ def lookup(id, entity=None, country=None, limit=500):
     if not items:
         raise ServiceException(type='Error', message='Nothing found!')
     return items[0]
+
+def rss_lookup(genre, limit=5):
+    items = RssLookup(genre=genre, limit=limit).getRssResult();
+
+    if not items:
+        raise ServiceException(type='Error', message='Nothing found!')
+    return items
