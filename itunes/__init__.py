@@ -179,7 +179,9 @@ class _BaseObject(object):
 
         for json in self._json_results['feed']['entry']:
             id = json['id']['attributes']['im:id']
-            item = IosApp(id);
+            
+            item = IosApp(id)
+            json = lookup(id).get_json_data()
 
             item._set(json)
 
@@ -326,6 +328,12 @@ class Item(object):
         self._set_artwork(json)
         self._set_url(json)
 
+        # store json data
+        self._set_data(json)
+
+    def _set_data(self, json):
+        self.json_data = json
+
     def _set_genre(self, json):
         self.genre = json.get('primaryGenreName', None)
 
@@ -452,6 +460,9 @@ class Item(object):
             raise ServiceException(type='Error', message='Nothing found!')
         return items[1]
 
+    def get_json_data(self):
+        return self.json_data
+
 # ARTIST
 class Artist(Item):
     """ Artist class """
@@ -576,35 +587,7 @@ class Audiobook(Album):
 
 
 
-# # IosApp
-class IosApp():
-    def __init__(self, id):
-        self.id = id
-        self.data = lookup(id)
 
-    def _set(self, json):
-        self.name = self.data.get_name()
-        self.price = self.data.get_price()
-        self.description = self.data.get_description()
-        self.avg_rating = self.data.get_avg_rating()
-        self.num_ratings = self.data.get_num_ratings() 
-
-
-
-    def get_price(self):
-        return self.price
-
-    def get_description(self):
-        return self.description
-
-    def get_avg_rating(self):
-        return self.avg_rating
-
-    def get_num_ratings(self):
-        return self.num_ratings
-
-    def get_name(self):
-        return self.name
 
 
 
@@ -659,6 +642,7 @@ class Software(Track):
         else:
             self.num_ratings = json.get('userRatingCount', None)
 
+
     # GETTERs
     def get_version(self):
         return self.version
@@ -676,6 +660,33 @@ class Software(Track):
         return self.avg_rating
     def get_num_ratings(self):
         return self.num_ratings
+
+
+
+# # IosApp
+class IosApp(Software):
+    def __init__(self, id):
+        Software.__init__(self, id)
+
+    def _set(self, json):
+        super(IosApp, self)._set(json)
+        # print (json.get('userRatingCountForCurrentVersion'))
+        self._set_avg_rating(json, True)
+        self._set_num_ratings(json, True)
+
+
+    def _set_avg_rating(self, json, only_current_version=False):
+        if only_current_version:
+            self.avg_rating = json.get('averageUserRatingForCurrentVersion', None)
+        else:
+            self.avg_rating = json.get('averageUserRating', None)
+
+    def _set_num_ratings(self, json, only_current_version=False):
+        if only_current_version:
+            self.num_ratings = json.get('userRatingCountForCurrentVersion', None)
+        else:
+            self.num_ratings = json.get('userRatingCount', None)
+
 
 # CACHE
 def enable_caching(cache_dir = None):
@@ -752,7 +763,7 @@ def lookup(id, entity=None, country=None, limit=500):
         raise ServiceException(type='Error', message='Nothing found!')
     return items[0]
 
-def rss_lookup(genre, limit=5):
+def rss_search(genre, limit=5):
     items = RssLookup(genre=genre, limit=limit).getRssResult();
 
     if not items:
